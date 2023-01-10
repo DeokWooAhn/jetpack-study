@@ -32,7 +32,7 @@ import com.google.android.material.dialog.MaterialAlertDialogBuilder
  */
 class GameFragment : Fragment() {
 
-    private val viewModel : GameViewModel by viewModels()
+    private val viewModel: GameViewModel by viewModels()
 
     private var score = 0
     private var currentWordCount = 0
@@ -47,30 +47,38 @@ class GameFragment : Fragment() {
     // first fragment
 
     override fun onCreateView(
-            inflater: LayoutInflater, container: ViewGroup?,
-            savedInstanceState: Bundle?
+        inflater: LayoutInflater, container: ViewGroup?,
+        savedInstanceState: Bundle?
     ): View {
         // Inflate the layout XML file and return a binding object instance
         binding = GameFragmentBinding.inflate(inflater, container, false)
         Log.d("GameFragment", "GameFragment created/re-created")
-        Log.d("GameFragment", "Word: ${viewModel.currentScrambledWord} " +
-                "Score: ${viewModel.score} WordCount: ${viewModel.currentWordCount}")
+        Log.d(
+            "GameFragment", "Word: ${viewModel.currentScrambledWord} " +
+                    "Score: ${viewModel.score} WordCount: ${viewModel.currentWordCount}"
+        )
         return binding.root
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
 
-        binding.score.text = getString(R.string.score, 0)
-        binding.wordCount.text = getString(
-            R.string.word_count, 0, MAX_NO_OF_WORDS)
-
         // Setup a click listener for the Submit and Skip buttons.
         binding.submit.setOnClickListener { onSubmitWord() }
         binding.skip.setOnClickListener { onSkipWord() }
-        // Update the UI
-        updateNextWordOnScreen()
 
+        // Observe the currentScrambledWord LiveData.
+        viewModel.currentScrambledWord.observe(viewLifecycleOwner) { newWord ->
+            binding.textViewUnscrambledWord.text = newWord
+        }
+
+        viewModel.score.observe(viewLifecycleOwner) { newScore ->
+            binding.score.text = getString(R.string.score, newScore)
+        }
+        viewModel.currentWordCount.observe(viewLifecycleOwner) { newWordCount ->
+            binding.wordCount.text =
+                getString(R.string.word_count, newWordCount, MAX_NO_OF_WORDS)
+        }
     }
 
     override fun onDetach() {
@@ -87,10 +95,8 @@ class GameFragment : Fragment() {
 
         if (viewModel.isUserWordCorrcet(playerWord)) {
             setErrorTextField(false)
-            binding.score.text = getString(R.string.score, viewModel.score)
-            if (viewModel.nextWord()) {
-                updateNextWordOnScreen()
-            } else {
+//            binding.score.text = getString(R.string.score, viewModel.score)
+            if (!viewModel.nextWord()) {
                 showFinalScoreDialog()
             }
         } else {
@@ -105,7 +111,6 @@ class GameFragment : Fragment() {
     private fun onSkipWord() {
         if (viewModel.nextWord()) {
             setErrorTextField(false)
-            updateNextWordOnScreen()
         } else {
             showFinalScoreDialog()
         }
@@ -127,7 +132,6 @@ class GameFragment : Fragment() {
     private fun restartGame() {
         viewModel.reinitializeData()
         setErrorTextField(false)
-        updateNextWordOnScreen()
     }
 
     /*
@@ -153,20 +157,16 @@ class GameFragment : Fragment() {
     /*
      * Displays the next scrambled word on screen.
      */
-    private fun updateNextWordOnScreen() {
-        binding.textViewUnscrambledWord.text = viewModel.currentScrambledWord
-        binding.wordCount.text = getString(
-            R.string.word_count, viewModel.currentWordCount, MAX_NO_OF_WORDS)
-    }
 
     private fun showFinalScoreDialog() {
         MaterialAlertDialogBuilder(requireContext())
-            .setMessage(getString(R.string.you_scored, viewModel.score))
+            .setTitle(getString(R.string.congratulations))
+            .setMessage(getString(R.string.you_scored, viewModel.score.value))
             .setCancelable(false)
-            .setNegativeButton(getString(R.string.exit)) {_, _ ->
+            .setNegativeButton(getString(R.string.exit)) { _, _ ->
                 exitGame()
             }
-            .setPositiveButton(getString(R.string.play_again)) {_, _ ->
+            .setPositiveButton(getString(R.string.play_again)) { _, _ ->
                 restartGame()
             }
             .show()
