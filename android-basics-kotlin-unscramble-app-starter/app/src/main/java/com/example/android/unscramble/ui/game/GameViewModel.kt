@@ -1,34 +1,71 @@
 package com.example.android.unscramble.ui.game
 
-import android.util.Log
-import androidx.lifecycle.LiveData
-import androidx.lifecycle.MutableLiveData
-import androidx.lifecycle.ViewModel
+import android.text.Spannable
+import android.text.SpannableString
+import android.text.style.TtsSpan
+import androidx.lifecycle.*
+import kotlinx.coroutines.flow.*
+import java.util.*
+import kotlin.random.Random
 
-class GameViewModel : ViewModel() {
+class SaveableMutableStateFlow<T>(
+    private val savedStateHandle: SavedStateHandle,
+    private val key: String,
+    initialValue: T
+) {
+    private val state: StateFlow<T> = savedStateHandle.getStateFlow(key, initialValue)
+    var value: T
+        get() = state.value
+        set(value) {
+            savedStateHandle[key] = value
+        }
+    fun asStateFlow(): StateFlow<T> = state
+}
 
-    private val _score = MutableLiveData(0)
-    val score: LiveData<Int>
-        get() = _score
+fun <T> SavedStateHandle.getMutableStateFLow(key: String, initialValue: T): SaveableMutableStateFlow<T> =
+    SaveableMutableStateFlow(this, key, initialValue)
 
-    private val _currentWordCount = MutableLiveData(0)
-    val currentWordCount: LiveData<Int>
-        get() = _currentWordCount
 
-    private val _currentScrambledWord = MutableLiveData<String>()
-    val currentScrambledWord: LiveData<String>
-        get() = _currentScrambledWord
+class GameViewModel(private val stateHandler: SavedStateHandle) : ViewModel() {
+
+    private val _score = stateHandler.getMutableStateFLow("score", 0)
+    val score: StateFlow<Int>
+        get() = _score.asStateFlow()
+
+//    val score: StateFlow<Int> = stateHandler.getStateFlow("score", 0)
+//    private fun setScore(value: Int) {
+//        stateHandler["score"] = value
+//    }
+
+    private val _currentWordCount = stateHandler.getMutableStateFLow("currentWordCount", 0)
+    val currentWordCount: StateFlow<Int>
+        get() = _currentWordCount.asStateFlow()
+
+    private val _currentScrambledWord = stateHandler.getMutableStateFLow("currentScrambledWord", "")
+    val currentScrambledWord: StateFlow<Spannable> = _currentScrambledWord
+        .asStateFlow()
+        .map {
+            val scrambledWord = it.toString()
+            val spannable: Spannable = SpannableString(scrambledWord)
+            spannable.setSpan(
+                TtsSpan.VerbatimBuilder(scrambledWord).build(),
+                0,
+                scrambledWord.length,
+                Spannable.SPAN_INCLUSIVE_INCLUSIVE
+            )
+            spannable
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpannableString(""))
 
     private var wordsList: MutableList<String> = mutableListOf()
     private lateinit var currentWord: String
 
     init {
-        Log.d("GameFragment", "GameViewModel created!")
         getNextWord()
     }
 
     private fun getNextWord() {
-        currentWord = allWordsList.random()
+        currentWord = allWordsList.random(Random(Calendar.getInstance().timeInMillis))
         val tempWord = currentWord.toCharArray()
         tempWord.shuffle()
 
@@ -39,7 +76,7 @@ class GameViewModel : ViewModel() {
             getNextWord()
         } else {
             _currentScrambledWord.value = String(tempWord)
-            _currentWordCount.value = (_currentWordCount.value)?.inc()
+            _currentWordCount.value = (_currentWordCount.value)?.inc()!!
             wordsList.add(currentWord)
         }
     }
@@ -52,7 +89,7 @@ class GameViewModel : ViewModel() {
     }
 
     private fun increaseScore() {
-        _score.value = (_score.value)?.plus(SCORE_INCREASE)
+        _score.value = (_score.value)?.plus(SCORE_INCREASE)!!
     }
 
     fun isUserWordCorrcet(playerWord: String): Boolean {
@@ -68,11 +105,6 @@ class GameViewModel : ViewModel() {
         _currentWordCount.value = 0
         wordsList.clear()
         getNextWord()
-    }
-
-    override fun onCleared() {
-        super.onCleared()
-        Log.d("GameFragment", "GameViewModel destroyed!")
     }
 }
 
