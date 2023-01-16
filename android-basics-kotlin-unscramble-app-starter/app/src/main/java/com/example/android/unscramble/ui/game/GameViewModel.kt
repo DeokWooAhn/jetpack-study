@@ -19,10 +19,14 @@ class SaveableMutableStateFlow<T>(
         set(value) {
             savedStateHandle[key] = value
         }
+
     fun asStateFlow(): StateFlow<T> = state
 }
 
-fun <T> SavedStateHandle.getMutableStateFLow(key: String, initialValue: T): SaveableMutableStateFlow<T> =
+fun <T> SavedStateHandle.getMutableStateFLow(
+    key: String,
+    initialValue: T
+): SaveableMutableStateFlow<T> =
     SaveableMutableStateFlow(this, key, initialValue)
 
 
@@ -44,8 +48,12 @@ class GameViewModel(private val stateHandler: SavedStateHandle) : ViewModel() {
     private val _currentScrambledWord = stateHandler.getMutableStateFLow("currentScrambledWord", "")
     val currentScrambledWord: StateFlow<Spannable> = _currentScrambledWord
         .asStateFlow()
-        .map {
-            val scrambledWord = it.toString()
+        .onSubscription {
+            // TODO nextWord() if necessary
+            if (currentWord.isEmpty())
+                nextWord()
+        }
+        .map { scrambledWord ->
             val spannable: Spannable = SpannableString(scrambledWord)
             spannable.setSpan(
                 TtsSpan.VerbatimBuilder(scrambledWord).build(),
@@ -57,39 +65,54 @@ class GameViewModel(private val stateHandler: SavedStateHandle) : ViewModel() {
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), SpannableString(""))
 
-    private var wordsList: MutableList<String> = mutableListOf()
-    private lateinit var currentWord: String
-
-    init {
-        getNextWord()
-    }
-
-    private fun getNextWord() {
-        currentWord = allWordsList.random(Random(Calendar.getInstance().timeInMillis))
-        val tempWord = currentWord.toCharArray()
-        tempWord.shuffle()
-
-        while (String(tempWord).equals(currentWord, false)) {
-            tempWord.shuffle()
+    // List of words used in the game
+    private var wordsList: List<String>
+        get() = stateHandler["wordsList"] ?: emptyList()
+        set(value) {
+            stateHandler["wordsList"] = value
         }
-        if (wordsList.contains(currentWord)) {
-            getNextWord()
-        } else {
+
+    private var currentWord: String
+        get() = stateHandler["currentWord"] ?: ""
+        set(value) {
+            val tempWord = currentWord.toCharArray()
+            do {
+                tempWord.shuffle()
+            } while (String(tempWord) == value)
             _currentScrambledWord.value = String(tempWord)
-            _currentWordCount.value = (_currentWordCount.value)?.inc()!!
-            wordsList.add(currentWord)
+            _currentWordCount.value += 1
+            wordsList = wordsList + currentWord
+            stateHandler["currentWord"] = value
         }
+
+//    private fun getNextWord() {
+//        var nextWord: String
+//        do {
+//            nextWord = allWordsList.random(Random(Calendar.getInstance().timeInMillis))
+//        } while (wordsList.contains(currentWord))
+//        currentWord = nextWord
+//    }
+
+    fun reinitializeData() {
+        _score.value = 0
+        _currentWordCount.value = 0
+        wordsList = emptyList()
+        nextWord()
     }
 
     fun nextWord(): Boolean {
-        return if (_currentWordCount.value!! < MAX_NO_OF_WORDS) {
-            getNextWord()
+        return if (_currentWordCount.value < MAX_NO_OF_WORDS) {
+            var nextWord: String
+            do {
+                nextWord = allWordsList.random(Random(Calendar.getInstance().timeInMillis))
+            } while (wordsList.contains(currentWord))
+            currentWord = nextWord
             true
         } else false
     }
 
     private fun increaseScore() {
-        _score.value = (_score.value)?.plus(SCORE_INCREASE)!!
+        _score.value += SCORE_INCREASE
     }
 
     fun isUserWordCorrcet(playerWord: String): Boolean {
@@ -98,13 +121,6 @@ class GameViewModel(private val stateHandler: SavedStateHandle) : ViewModel() {
             return true
         }
         return false
-    }
-
-    fun reinitializeData() {
-        _score.value = 0
-        _currentWordCount.value = 0
-        wordsList.clear()
-        getNextWord()
     }
 }
 
